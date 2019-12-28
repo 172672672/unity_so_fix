@@ -4,9 +4,9 @@ LOCAL_PATH := $(call my-dir)
 ####################################################################################################
 #include $(CLEAR_VARS) 
 
-LOCAL_MODULE := bootstrap
+LOCAL_MODULE := boostrap
 
-LOCAL_MODULE_FILENAME := libbootstrap
+LOCAL_MODULE_FILENAME := libboostrap
 
 cmd-strip = $(TOOLCHAIN_PREFIX)strip --strip-unneeded -x $1
 

@@ -8,7 +8,7 @@
 #include "log.h"
 #include "zip/shadow_zip.h"
 #include "xhook/xhook.h"
-#include "io_github_noodle1983_Boostrap.h"
+#include "com_unity3d_hookplayer_Boostrap.h"
 #include "mymap32.h"
 
 struct GlobalData
@@ -34,23 +34,26 @@ static inline char * dupstr(const char* const str)
 const char* SPLITER = ";";
 const char* g_data_file_path = NULL;
 const char* g_apk_file_path = NULL;
-static void bootstrap();
+static int bootstrap();
 std::string get_apk_path(const std::string& bundle_id);
 
 __attribute__ ((visibility ("default")))
-JNIEXPORT void JNICALL Java_io_github_noodle1983_Boostrap_init
-  (JNIEnv * jenv, jclass cls, jstring path)
+JNIEXPORT int JNICALL Java_com_unity3d_hookplayer_Boostrap_init(JNIEnv * jenv, jclass cls)
+{
+	LeakSingleton<GlobalData, 0>::init();
+	g_global_data->g_fd_to_file.init(4096, 4096, "fd_to_file");
+	g_global_data->g_file_to_shadowzip.init(8192, 8192, "file_to_shadowzip");
+	
+    return bootstrap();
+}
+
+__attribute__ ((visibility ("default")))
+JNIEXPORT void JNICALL Java_com_unity3d_hookplayer_Boostrap_setInitPath(JNIEnv * jenv, jclass cls, jstring path)
 {
 	const char* data_file_path = jenv->GetStringUTFChars(path, NULL); 
 	g_data_file_path = dupstr(data_file_path); // never delete, ok with only one
 	jenv->ReleaseStringUTFChars(path, data_file_path);
 	MY_INFO("data file path:%s", g_data_file_path);
-
-	//all leak
-    LeakSingleton<GlobalData, 0>::init();
-	g_global_data->g_fd_to_file.init(4096, 4096, "fd_to_file");
-	g_global_data->g_file_to_shadowzip.init(8192, 8192, "file_to_shadowzip");
-    bootstrap();
 }
 
 static std::string get_bundle_id()
@@ -73,22 +76,22 @@ static std::string get_bundle_id()
 	return std::string(bundle_id);
 }
 
-__attribute__ ((visibility ("default")))
-char* get_arch_abi()
-{
-	return dupstr(TARGET_ARCH_ABI);
-}
-
 static char* g_use_data_path = NULL;
 __attribute__ ((visibility ("default")))
-char* use_data_dir(const char* data_path, const char* apk_path)
+JNIEXPORT int JNICALL Java_com_unity3d_hookplayer_Boostrap_useDataDir(JNIEnv * jenv, jclass cls, jstring data_path_str, jstring apk_path_str)
 {
+	const char* data_path = jenv->GetStringUTFChars(data_path_str, NULL); 
+	const char* apk_path = jenv->GetStringUTFChars(apk_path_str, NULL); 
+	
+	MY_INFO("use data dir-->data path:%s", data_path);
+	MY_INFO("use data dir-->apk path:%s", apk_path);
 	if (strlen(data_path) > 0){
 		DIR* dir = opendir(data_path);
 		if (dir == NULL)
 		{
 			MY_ERROR("can't access data path:%s", data_path);
-			return strdup("can't access data dir!");		
+			//return strdup("can't access data dir!");		
+			return 1;
 		}
 		closedir(dir);
 	}
@@ -103,13 +106,15 @@ char* use_data_dir(const char* data_path, const char* apk_path)
 		char error_str[256] = {0};
 		snprintf(error_str, sizeof(error_str), "can't store data path. error:%s", strerror(errno));
 		MY_ERROR("can't access to %s. %s", patch_info_path, error_str);
-		return dupstr(error_str);
+		//return dupstr(error_str);
+		return 2;
 	}
 	patch_info_file.write(data_path, strlen(data_path));	
 	patch_info_file.write(SPLITER, strlen(SPLITER));	
 	patch_info_file.write(apk_path, strlen(apk_path));	
 	patch_info_file.close();
-	return NULL;
+	//return NULL;
+	return 0;
 }
 
 static bool pre_process_so_lib(const char* const so_path, const char* const so_name, const std::string& bundle_id)
@@ -277,11 +282,12 @@ static bool extract_patch_info(const std::string& bundle_id, std::string& defaul
 	g_apk_ino = apk_stat.st_ino;
 		
 	//if we have newer apk file, then no need to load patch
-	if (apk_stat.st_mtime > user_stat.st_mtime){	
-		MY_ERROR("newer apk file:%s, no need to patch", apk_path);
-		unlink(patch_info_path);
-		return false;
-	}
+	//覆盖安装后是否继续用老的patch由外部决定
+	//if (apk_stat.st_mtime > user_stat.st_mtime){	
+	//	MY_ERROR("newer apk file:%s, no need to patch", apk_path);
+	//	unlink(patch_info_path);
+	//	return false;
+	//}
 	
 	if (!pre_process_all_so_lib(data_path, bundle_id))
 	{
@@ -999,7 +1005,7 @@ static int init_art_hook()
 }
 
 
-static void bootstrap()
+static int bootstrap()
 {
 	std::string bundle_id = get_bundle_id();
 	
@@ -1016,7 +1022,7 @@ static void bootstrap()
 			if (!handle) {
 				MY_ERROR("failed to load libil2cpp:%s, must exit", dlerror());
 				_exit(-1);
-				return;
+				return 1;
 			}
 		
 			
@@ -1026,12 +1032,14 @@ static void bootstrap()
 		else
 		{		
 			MY_INFO("bootstrap running failed with patch");
+			return 2;
 		}
 	}
 	else
 	{
 		MY_INFO("bootstrap running without patch");
 	}
+	return 0;
 }
 
 //static void entrance() __attribute__((constructor));
